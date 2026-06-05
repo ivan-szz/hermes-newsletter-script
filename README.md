@@ -2,55 +2,104 @@
 
 A zero-config Rust CLI that aggregates tech news from 11 sources, filters by your topics of interest, and outputs clean JSON. Built to run as a Hermes Agent cronjob skill — works as a standalone binary with no runtime dependencies.
 
-## Quick Start
-
-```bash
-# 1. Create your tags file
-mkdir -p ~/.hermes
-echo '{ "tags": ["rust", "kubernetes", "ai"] }' > ~/.hermes/newsletter-tags.json
-
-# 2. Fetch everything
-cargo run
-
-# 3. Pick items from the output, then get summaries
-FETCH_TLDR="https://dev.to/user/article-1,https://arstechnica.com/..." cargo run
-```
-
 ## Installation
 
-### One-liner install
+### Step 1 — Clone the repo on your VPS
 
 ```bash
-./install.sh
+ssh user@vps
+git clone <repo-url> /opt/hermes-newsletter
 ```
 
-This will:
-- Build the binary (uses local Rust if available, otherwise builds in Docker)
-- Copy it to `/usr/local/bin/`
-- Create a default tags file at `~/.hermes/newsletter-tags.json` if missing
-
-### Manual build
+### Step 2 — Build the binary
 
 ```bash
-cargo build --release --target x86_64-unknown-linux-musl
-cp target/x86_64-unknown-linux-musl/release/hermes_newsletter_script /usr/local/bin/
+cd /opt/hermes-newsletter
+docker build -t newsletter-builder .
+mkdir -p /opt/hermes-newsletter/bin
+docker cp $(docker create newsletter-builder):/usr/local/bin/hermes_newsletter_script /opt/hermes-newsletter/bin/newsletter
 ```
 
-### Docker only (no Rust needed)
+This compiles the Rust binary inside Docker. No Rust needed on the VPS.
+
+### Step 3 — Create the tags file
 
 ```bash
-docker build -t hermes-newsletter .
-docker cp $(docker create hermes-newsletter):/usr/local/bin/hermes_newsletter_script ./hermes_newsletter_script
+mkdir -p /root/.hermes
+echo '{ "tags": ["rust", "kubernetes", "ai"] }' > /root/.hermes/newsletter-tags.json
 ```
+
+### Step 4 — Add to your docker-compose
+
+```yaml
+services:
+  hermes:
+    # ... your existing hermes config ...
+    volumes:
+      - /opt/hermes-newsletter/bin/newsletter:/usr/local/bin/newsletter:ro
+      - /root/.hermes:/root/.hermes
+```
+
+Hermes can now run `newsletter` directly. It reads tags from `/root/.hermes/newsletter-tags.json`.
+
+### Step 5 — Run
+
+```bash
+# from inside the hermes container
+newsletter
+
+# or with enrichment
+FETCH_TLDR="id1,id2,id3" newsletter
+```
+
+### Updating
+
+```bash
+cd /opt/hermes-newsletter
+git pull
+docker build -t newsletter-builder .
+docker cp $(docker create newsletter-builder):/usr/local/bin/hermes_newsletter_script /opt/hermes-newsletter/bin/newsletter
+```
+
+## Multiple Instances
+
+Each Hermes instance can have its own tags by mounting different host paths. The binary is shared.
+
+```yaml
+services:
+  hermes-1:
+    volumes:
+      - /opt/hermes-newsletter/bin/newsletter:/usr/local/bin/newsletter:ro
+      - /root/.hermes-1:/root/.hermes
+
+  hermes-2:
+    volumes:
+      - /opt/hermes-newsletter/bin/newsletter:/usr/local/bin/newsletter:ro
+      - /root/.hermes-2:/root/.hermes
+```
+
+Set up tags per instance on the VPS:
+
+```bash
+# instance 1 — AI focused
+mkdir -p /root/.hermes-1
+echo '{ "tags": ["ai", "machinelearning", "llm"] }' > /root/.hermes-1/newsletter-tags.json
+
+# instance 2 — DevOps focused
+mkdir -p /root/.hermes-2
+echo '{ "tags": ["kubernetes", "docker", "devops"] }' > /root/.hermes-2/newsletter-tags.json
+```
+
+Each instance runs the same binary but sees different tags. No shared state.
 
 ## Usage
 
 ### Pass 1 — Discover
 
-Fetch all sources, filter by tags, get a brief list:
+Fetches all 11 sources, filters by your tags, outputs a brief JSON list:
 
 ```bash
-cargo run
+newsletter
 ```
 
 Output (stdout):
@@ -77,14 +126,12 @@ Output (stdout):
 ]
 ```
 
-Review the list, pick the IDs you want to read.
-
 ### Pass 2 — Enrich
 
 Get full summaries for the items you selected:
 
 ```bash
-FETCH_TLDR="https://dev.to/user/building-a-rag-system-in-rust-1a2b" cargo run
+FETCH_TLDR="https://dev.to/user/building-a-rag-system-in-rust-1a2b" newsletter
 ```
 
 Output (stdout):
@@ -96,28 +143,22 @@ Output (stdout):
     "title": "Building a RAG System in Rust with Qdrant",
     "tags": ["rust", "ai", "rag"],
     "source": "dev.to",
-    "summary": "In this post I walk through building a retrieval-augmented generation pipeline using Qdrant as the vector store and Rig as the orchestration framework. The goal was to keep everything in Rust for performance and type safety..."
+    "summary": "In this post I walk through building a retrieval-augmented generation pipeline using Qdrant as the vector store and Rig as the orchestration framework..."
   }
 ]
 ```
 
-### Writing to a file
+### Writing output to a file
 
 ```bash
-OUTPUT_FILE=output.json cargo run
-```
-
-Logs always go to stderr, so you can safely pipe stdout:
-
-```bash
-cargo run | jq '.[] | .title'
+OUTPUT_FILE=/root/.hermes/output.json newsletter
 ```
 
 ## Configuration
 
 ### Tags
 
-Create `~/.hermes/newsletter-tags.json`:
+Edit `/root/.hermes/newsletter-tags.json` on the VPS (or whatever path is mounted):
 
 ```json
 { "tags": ["rust", "kubernetes", "ai", "security"] }
@@ -127,34 +168,26 @@ Create `~/.hermes/newsletter-tags.json`:
 - Against item tags: exact match (`"ai"` matches `["AI", "ML"]`)
 - Against titles: whole-word match (`"ai"` matches `"AI Agents"` but not `"Air Quality"`)
 
-#### Use a local tags file (for development)
-
-```bash
-TAGS_SOURCE=local cargo run
-```
-
-This reads from `./newsletter-tags.json` in the current directory instead of `~/.hermes/`.
-
 ### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TAGS_SOURCE` | `~/.hermes/` | Set to `local` to read `./newsletter-tags.json` |
 | `FETCH_TLDR` | *(none)* | Comma-separated IDs for pass 2 (enrichment) |
 | `OUTPUT_FILE` | stdout | Path to write JSON output |
+| `TAGS_SOURCE` | `~/.hermes/` | Set to `local` to read `./newsletter-tags.json` (for local dev) |
 
 ## Sources
 
 ### RSS Feeds
 
-| Source | Content |
-|--------|---------|
-| Ars Technica | Tech, science, policy |
-| The New Stack | Cloud-native, DevOps |
-| dev.to | Community articles (filtered by your tags) |
-| Schneier on Security | Security analysis |
-| Hacker News (RSS) | Frontpage stories |
-| Krebs on Security | Cybersecurity journalism |
+| Source | Content | Tag filtering |
+|--------|---------|:---:|
+| Ars Technica | Tech, science, policy | matched |
+| The New Stack | Cloud-native, DevOps | matched |
+| dev.to | Community articles (filtered by your tags) | matched |
+| Schneier on Security | Security analysis | matched |
+| Hacker News (RSS) | Frontpage stories | matched |
+| Krebs on Security | Cybersecurity journalism | matched |
 
 ### REST APIs
 
@@ -193,59 +226,21 @@ Summaries are:
 - **Truncated** — capped at 600 chars with `...` suffix
 - **Enriched** — dev.to articles re-fetch the full body for meaningful excerpts
 
-## Hermes Integration
-
-The binary is fully static (musl) — just copy it to the Hermes container. No Docker, no runtime dependencies.
-
-### 1. Build & copy
+## Local Development
 
 ```bash
-# on your machine
-./install.sh
+# install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# copy to the VPS
-scp /usr/local/bin/hermes_newsletter_script user@vps:/usr/local/bin/
+# create local tags file
+echo '{ "tags": ["rust", "kubernetes", "ai"] }' > newsletter-tags.json
+
+# run
+TAGS_SOURCE=local cargo run
+
+# run with enrichment
+TAGS_SOURCE=local FETCH_TLDR="id1,id2" cargo run
 ```
-
-### 2. Set up tags on the VPS
-
-```bash
-ssh user@vps
-mkdir -p ~/.hermes
-echo '{ "tags": ["rust", "kubernetes", "ai"] }' > ~/.hermes/newsletter-tags.json
-```
-
-### 3. Reference in docker-compose
-
-In your Hermes compose file, mount the binary:
-
-```yaml
-services:
-  hermes:
-    # ... your existing hermes config ...
-    volumes:
-      - /usr/local/bin/hermes_newsletter_script:/usr/local/bin/newsletter:ro
-      - ~/.hermes:/root/.hermes:ro
-```
-
-### 4. Customize & reinstall
-
-```bash
-# edit source
-vim src/fetchers/api.rs
-
-# rebuild & copy
-./install.sh
-scp /usr/local/bin/hermes_newsletter_script user@vps:/usr/local/bin/
-```
-
-### Typical workflow
-
-1. Hermes (or you) runs the binary
-2. Script fetches all sources, outputs the brief JSON list to stdout
-3. You review and select relevant IDs
-4. Re-run with `FETCH_TLDR=<ids>` to get enriched summaries
-5. Summaries go into the newsletter
 
 ## Tech Stack
 

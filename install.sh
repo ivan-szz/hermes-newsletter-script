@@ -27,8 +27,13 @@ else
 fi
 
 echo "==> Installing to ${INSTALL_DIR}/${BINARY_NAME}"
-cp "${BIN_PATH}" "${INSTALL_DIR}/${BINARY_NAME}"
-chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
+if [ -w "${INSTALL_DIR}" ]; then
+    cp "${BIN_PATH}" "${INSTALL_DIR}/${BINARY_NAME}"
+    chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
+else
+    sudo cp "${BIN_PATH}" "${INSTALL_DIR}/${BINARY_NAME}"
+    sudo chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
+fi
 
 # Ensure tags file exists
 TAGS_FILE="${HOME}/.hermes/newsletter-tags.json"
