@@ -275,3 +275,7 @@ Your Hermes agent can manage the newsletter tags, schedule and style. Give it th
 - "Run the newsletter cronjob every morning at 8am"
 
 The agent can read the docs, edit your tags file, and configure the cronjob — all from a single prompt. Source code changes require a manual rebuild on the VPS.
+
+## License
+
+[Apache License 2.0](LICENSE)
