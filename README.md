@@ -37,7 +37,7 @@ services:
     # ... your existing hermes config ...
     volumes:
       - /opt/hermes-newsletter/bin/newsletter:/usr/local/bin/newsletter:ro
-      - /root/.hermes:/root/.hermes
+      - /root/.hermes/newsletter-tags.json:/root/.hermes/newsletter-tags.json:ro
 ```
 
 Hermes can now run `newsletter` directly. It reads tags from `/root/.hermes/newsletter-tags.json`.
@@ -70,12 +70,12 @@ services:
   hermes-1:
     volumes:
       - /opt/hermes-newsletter/bin/newsletter:/usr/local/bin/newsletter:ro
-      - /root/.hermes-1:/root/.hermes
+      - /root/.hermes-1/newsletter-tags.json:/root/.hermes/newsletter-tags.json:ro
 
   hermes-2:
     volumes:
       - /opt/hermes-newsletter/bin/newsletter:/usr/local/bin/newsletter:ro
-      - /root/.hermes-2:/root/.hermes
+      - /root/.hermes-2/newsletter-tags.json:/root/.hermes/newsletter-tags.json:ro
 ```
 
 Set up tags per instance on the VPS:
