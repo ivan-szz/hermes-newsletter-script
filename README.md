@@ -8,26 +8,31 @@ A zero-config Rust CLI that aggregates tech news from 11 sources, filters by you
 
 ```bash
 ssh user@vps
-git clone <repo-url> /opt/hermes-newsletter
+git clone https://github.com/ivan-szz/hermes-newsletter-script.git /opt/hermes-agent/newsletter
 ```
 
 ### Step 2 — Build the binary
 
 ```bash
-cd /opt/hermes-newsletter
+cd /opt/hermes-agent/newsletter
 docker build -t newsletter-builder .
-mkdir -p /opt/hermes-newsletter/bin
-docker cp $(docker create newsletter-builder):/usr/local/bin/hermes_newsletter_script /opt/hermes-newsletter/bin/newsletter
+mkdir -p /opt/hermes-agent/newsletter/bin
+docker cp $(docker create newsletter-builder):/usr/local/bin/hermes_newsletter_script /opt/hermes-agent/newsletter/bin/newsletter
 ```
 
 This compiles the Rust binary inside Docker. No Rust needed on the VPS.
 
 ### Step 3 — Create the tags file
 
+Create a directory for your instance and add a tags file:
+
 ```bash
-mkdir -p /root/.hermes
-echo '{ "tags": ["rust", "kubernetes", "ai"] }' > /root/.hermes/newsletter-tags.json
+mkdir -p /root/.hermes-agent
+echo '{ "tags": ["rust", "kubernetes", "ai"] }' > /root/.hermes-agent/newsletter-tags.json
+chmod 666 /root/.hermes-agent/newsletter-tags.json
 ```
+
+The `chmod 666` lets Hermes (which runs as a non-root user) read and edit the tags file.
 
 ### Step 4 — Add to your docker-compose
 
@@ -36,11 +41,19 @@ services:
   hermes:
     # ... your existing hermes config ...
     volumes:
-      - /opt/hermes-newsletter/bin/newsletter:/usr/local/bin/newsletter:ro
-      - /root/.hermes/newsletter-tags.json:/root/.hermes/newsletter-tags.json:ro
+      - /opt/hermes-agent/newsletter/bin/newsletter:/usr/local/bin/newsletter:ro
+      - /root/.hermes-agent/newsletter-tags.json:/opt/data/home/.hermes/newsletter-tags.json
 ```
 
-Hermes can now run `newsletter` directly. It reads tags from `/root/.hermes/newsletter-tags.json`.
+> **Note:** The container path for the tags file (`/opt/data/home/.hermes/`) depends on your Hermes image's `$HOME` directory. Check with `docker exec <container> printenv HOME` if unsure.
+
+Make sure the binary is executable:
+
+```bash
+chmod 755 /opt/hermes-agent/newsletter/bin/newsletter
+```
+
+Hermes can now run `newsletter` directly. It reads and writes tags at `$HOME/.hermes/newsletter-tags.json`.
 
 ### Step 5 — Run
 
@@ -55,10 +68,11 @@ FETCH_TLDR="id1,id2,id3" newsletter
 ### Updating
 
 ```bash
-cd /opt/hermes-newsletter
+cd /opt/hermes-agent/newsletter
 git pull
 docker build -t newsletter-builder .
-docker cp $(docker create newsletter-builder):/usr/local/bin/hermes_newsletter_script /opt/hermes-newsletter/bin/newsletter
+docker cp $(docker create newsletter-builder):/usr/local/bin/hermes_newsletter_script /opt/hermes-agent/newsletter/bin/newsletter
+chmod 755 /opt/hermes-agent/newsletter/bin/newsletter
 ```
 
 ## Multiple Instances
@@ -69,25 +83,27 @@ Each Hermes instance can have its own tags by mounting different host paths. The
 services:
   hermes-1:
     volumes:
-      - /opt/hermes-newsletter/bin/newsletter:/usr/local/bin/newsletter:ro
-      - /root/.hermes-1/newsletter-tags.json:/root/.hermes/newsletter-tags.json:ro
+      - /opt/hermes-agent/newsletter/bin/newsletter:/usr/local/bin/newsletter:ro
+      - /root/.hermes-agent-1/newsletter-tags.json:/opt/data/home/.hermes/newsletter-tags.json
 
   hermes-2:
     volumes:
-      - /opt/hermes-newsletter/bin/newsletter:/usr/local/bin/newsletter:ro
-      - /root/.hermes-2/newsletter-tags.json:/root/.hermes/newsletter-tags.json:ro
+      - /opt/hermes-agent/newsletter/bin/newsletter:/usr/local/bin/newsletter:ro
+      - /root/.hermes-agent-2/newsletter-tags.json:/opt/data/home/.hermes/newsletter-tags.json
 ```
 
 Set up tags per instance on the VPS:
 
 ```bash
 # instance 1 — AI focused
-mkdir -p /root/.hermes-1
-echo '{ "tags": ["ai", "machinelearning", "llm"] }' > /root/.hermes-1/newsletter-tags.json
+mkdir -p /root/.hermes-agent-1
+echo '{ "tags": ["ai", "machinelearning", "llm"] }' > /root/.hermes-agent-1/newsletter-tags.json
+chmod 666 /root/.hermes-agent-1/newsletter-tags.json
 
 # instance 2 — DevOps focused
-mkdir -p /root/.hermes-2
-echo '{ "tags": ["kubernetes", "docker", "devops"] }' > /root/.hermes-2/newsletter-tags.json
+mkdir -p /root/.hermes-agent-2
+echo '{ "tags": ["kubernetes", "docker", "devops"] }' > /root/.hermes-agent-2/newsletter-tags.json
+chmod 666 /root/.hermes-agent-2/newsletter-tags.json
 ```
 
 Each instance runs the same binary but sees different tags. No shared state.
@@ -151,14 +167,14 @@ Output (stdout):
 ### Writing output to a file
 
 ```bash
-OUTPUT_FILE=/root/.hermes/output.json newsletter
+OUTPUT_FILE=/opt/data/home/.hermes/output.json newsletter
 ```
 
 ## Configuration
 
 ### Tags
 
-Edit `/root/.hermes/newsletter-tags.json` on the VPS (or whatever path is mounted):
+Edit `$HOME/.hermes/newsletter-tags.json` on the VPS (or whatever path is mounted):
 
 ```json
 { "tags": ["rust", "kubernetes", "ai", "security"] }
