@@ -264,3 +264,14 @@ TAGS_SOURCE=local FETCH_TLDR="id1,id2" cargo run
 - **feed-rs** — RSS/Atom parser
 - **tokio** — async runtime
 - **serde** / **serde_json** — serialization
+
+## Customize with Your Agent
+
+Your Hermes agent can manage the newsletter tags, schedule and style. Give it the repo URL and ask:
+
+- "Read the README and set up the newsletter"
+- "Add `security` and `rust` to my newsletter tags"
+- "Remove `kubernetes` from my newsletter tags"
+- "Run the newsletter cronjob every morning at 8am"
+
+The agent can read the docs, edit your tags file, and configure the cronjob — all from a single prompt. Source code changes require a manual rebuild on the VPS.
